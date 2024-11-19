@@ -29,17 +29,6 @@ done
 VM_IDS=($($QM_CMD list | awk 'NR>1 {print $1}'))
 LXC_IDS=($($PCT_CMD list | awk 'NR>1 {print $1}'))
 
-# Function to check if VM is frozen by monitoring guest agent response
-is_vm_frozen() {
-  local vm_id=$1
-  local agent_status=$($QM_CMD agent $vm_id ping 2>&1)
-  if [ $? -ne 0 ]; then
-    return 0  # VM is frozen (agent not responding)
-  else
-    return 1  # VM is not frozen
-  fi
-}
-
 # Function to check VM status and reboot if needed
 check_and_reboot_vm() {
   local vm_id=$1
@@ -47,6 +36,22 @@ check_and_reboot_vm() {
   
   if [ -f "$conf_file" ]; then
     local status=$($QM_CMD status $vm_id | grep 'status:' | awk '{print $2}')
+    log_with_timestamp "VM $vm_id current status: $status"
+    
+    if [ "$status" == "starting" ]; then
+      log_with_timestamp "VM $vm_id is in the 'starting' state. Waiting for it to transition to 'running'."
+      for attempt in {1..5}; do
+        sleep 5  # Wait 5 seconds between checks
+        status=$($QM_CMD status $vm_id | grep 'status:' | awk '{print $2}')
+        if [ "$status" == "running" ]; then
+          log_with_timestamp "VM $vm_id has transitioned to 'running'."
+          return 0
+        fi
+        log_with_timestamp "VM $vm_id still in 'starting' state. Attempt $attempt of 5."
+      done
+      log_with_timestamp "VM $vm_id failed to transition to 'running' after multiple attempts."
+    fi
+
     if [ "$status" != "running" ]; then
       log_with_timestamp "VM $vm_id is not running. Rebooting..."
       if ! $QM_CMD stop $vm_id; then
@@ -59,8 +64,9 @@ check_and_reboot_vm() {
         return 1
       fi
     else
-      if is_vm_frozen $vm_id; then
-        log_with_timestamp "VM $vm_id is frozen. Rebooting..."
+      local agent_status=$($QM_CMD agent $vm_id ping 2>&1)
+      if [ $? -ne 0 ]; then
+        log_with_timestamp "Guest agent is not responding for VM $vm_id. Rebooting..."
         if ! $QM_CMD stop $vm_id; then
           log_with_timestamp "Error: Failed to stop VM $vm_id."
           return 1
@@ -71,11 +77,11 @@ check_and_reboot_vm() {
           return 1
         fi
       else
-        log_with_timestamp "VM $vm_id is running and not frozen."
+        log_with_timestamp "VM $vm_id is running and guest agent is responsive."
       fi
     fi
   else
-    log_with_timestamp "Configuration file '$conf_file' does not exist. Skipping reboot for VM $vm_id."
+    log_with_timestamp "Configuration file '$conf_file' does not exist. Skipping VM $vm_id."
   fi
 }
 
@@ -86,6 +92,22 @@ check_and_reboot_lxc() {
   
   if [ -f "$conf_file" ]; then
     local status=$($PCT_CMD status $lxc_id | grep 'status:' | awk '{print $2}')
+    log_with_timestamp "LXC $lxc_id current status: $status"
+
+    if [ "$status" == "starting" ]; then
+      log_with_timestamp "LXC $lxc_id is in the 'starting' state. Waiting for it to transition to 'running'."
+      for attempt in {1..5}; do
+        sleep 5  # Wait 5 seconds between checks
+        status=$($PCT_CMD status $lxc_id | grep 'status:' | awk '{print $2}')
+        if [ "$status" == "running" ]; then
+          log_with_timestamp "LXC $lxc_id has transitioned to 'running'."
+          return 0
+        fi
+        log_with_timestamp "LXC $lxc_id still in 'starting' state. Attempt $attempt of 5."
+      done
+      log_with_timestamp "LXC $lxc_id failed to transition to 'running' after multiple attempts."
+    fi
+
     if [ "$status" != "running" ]; then
       log_with_timestamp "LXC $lxc_id is not running. Rebooting..."
       if ! $PCT_CMD stop $lxc_id; then
@@ -101,7 +123,7 @@ check_and_reboot_lxc() {
       log_with_timestamp "LXC $lxc_id is running."
     fi
   else
-    log_with_timestamp "Configuration file '$conf_file' does not exist. Skipping reboot for LXC $lxc_id."
+    log_with_timestamp "Configuration file '$conf_file' does not exist. Skipping LXC $lxc_id."
   fi
 }
 
