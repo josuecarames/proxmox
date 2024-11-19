@@ -49,7 +49,7 @@ check_and_reboot_vm() {
         fi
         log_with_timestamp "VM $vm_id still in 'starting' state. Attempt $attempt of 5."
       done
-      log_with_timestamp "VM $vm_id failed to transition to 'running' after multiple attempts."
+      log_with_timestamp "VM $vm_id failed to transition to 'running'. Rebooting..."
     fi
 
     if [ "$status" != "running" ]; then
@@ -63,10 +63,11 @@ check_and_reboot_vm() {
         log_with_timestamp "Error: Failed to start VM $vm_id."
         return 1
       fi
+      return
     else
       local agent_status=$($QM_CMD agent $vm_id ping 2>&1)
       if [ $? -ne 0 ]; then
-        log_with_timestamp "Guest agent is not responding for VM $vm_id. Rebooting..."
+        log_with_timestamp "Guest agent is not responding for VM $vm_id. Rebooting due to guest agent failure..."
         if ! $QM_CMD stop $vm_id; then
           log_with_timestamp "Error: Failed to stop VM $vm_id."
           return 1
@@ -105,7 +106,7 @@ check_and_reboot_lxc() {
         fi
         log_with_timestamp "LXC $lxc_id still in 'starting' state. Attempt $attempt of 5."
       done
-      log_with_timestamp "LXC $lxc_id failed to transition to 'running' after multiple attempts."
+      log_with_timestamp "LXC $lxc_id failed to transition to 'running'. Rebooting..."
     fi
 
     if [ "$status" != "running" ]; then
@@ -119,6 +120,7 @@ check_and_reboot_lxc() {
         log_with_timestamp "Error: Failed to start LXC $lxc_id."
         return 1
       fi
+      return
     else
       log_with_timestamp "LXC $lxc_id is running."
     fi
